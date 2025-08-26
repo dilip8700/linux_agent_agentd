@@ -1,0 +1,133 @@
+#!/usr/bin/env bash
+# GenAI Linux Agent CLI - Beautiful and Functional
+set -euo pipefail
+
+API="http://127.0.0.1:8001"
+CMD=${1:-}
+ROLE=${2:-operator}
+USER_NAME=${USER:-me}
+
+if [[ -z "${CMD}" ]]; then
+  echo -e "\n🚀 \033[1;36mGenAI Linux Agent\033[0m"
+  echo -e "Usage: \033[1;33magentctl\033[0m \"\033[1;32m<english instruction>\033[0m\" [role]\n"
+  echo -e "Examples:"
+  echo -e "  \033[1;33magentctl\033[0m \"\033[1;32minstall nginx and start it\033[0m\""
+  echo -e "  \033[1;33magentctl\033[0m \"\033[1;32mshow running containers\033[0m\""
+  echo -e "  \033[1;33magentctl\033[0m \"\033[1;32mcheck system status\033[0m\"\n"
+  exit 1
+fi
+
+# Enhanced Colors
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
+BLUE='\033[0;34m'
+PURPLE='\033[0;35m'
+CYAN='\033[0;36m'
+BOLD='\033[1m'
+RESET='\033[0m'
+
+# Progress indicator
+show_progress() {
+  echo -ne "\r${CYAN}🤖 ${1}${RESET}"
+}
+
+# Build JSON safely using jq
+show_progress "Planning your request..."
+PLAN_PAYLOAD=$(jq -n --arg user "$USER_NAME" --arg role "$ROLE" --arg message "$CMD" '{user:$user, role:$role, message:$message}')
+PLAN_JSON=$(curl -s -X POST "$API/plan" -H "Content-Type: application/json" -d "$PLAN_PAYLOAD")
+echo -e "\r${GREEN}✅ Plan ready!${RESET}"
+
+# Extract plan data
+REQ_APPROVAL=$(jq -r '.requires_approval' <<<"$PLAN_JSON" 2>/dev/null || echo "true")
+EXPL=$(jq -r '.explanation // ""' <<<"$PLAN_JSON" 2>/dev/null || echo "")
+
+# Beautiful Header
+echo -e "\n${BOLD}${PURPLE}╔══════════════════════════════════════════════════════════════╗${RESET}"
+echo -e "${BOLD}${PURPLE}║                    🚀 GenAI Agent Plan                    ║${RESET}"
+echo -e "${BOLD}${PURPLE}╚══════════════════════════════════════════════════════════════╝${RESET}\n"
+
+# Instruction
+echo -e "${BOLD}${CYAN}📝 Instruction:${RESET} ${BOLD}${CMD}${RESET}"
+[[ -n "$EXPL" ]] && echo -e "${BOLD}${YELLOW}💡 Reason:${RESET} ${EXPL}\n"
+
+# Steps
+COUNT=$(jq '.plan | length' <<<"$PLAN_JSON" 2>/dev/null || echo 0)
+if [[ "$COUNT" -eq 0 ]]; then
+  echo -e "${RED}❌ No steps planned.${RESET}"
+else
+  echo -e "${BOLD}${GREEN}🔧 Steps to Execute:${RESET}\n"
+  for i in $(seq 0 $((COUNT-1))); do
+    TOOL=$(jq -r ".plan[$i].tool" <<<"$PLAN_JSON")
+    ACTION=$(jq -r ".plan[$i].action" <<<"$PLAN_JSON")
+    WHY=$(jq -r ".plan[$i].why // \"\"" <<<"$PLAN_JSON")
+    CMDLINE=$(jq -r ".plan[$i].args.cmd // \"\"" <<<"$PLAN_JSON")
+    
+    if [[ -n "$CMDLINE" ]]; then
+      echo -e "  ${BOLD}${PURPLE}[$((i+1))]${RESET} ${BOLD}${TOOL}.${ACTION}${RESET}"
+      echo -e "     ${YELLOW}🔨 Command:${RESET} ${CYAN}${CMDLINE}${RESET}"
+      [[ -n "$WHY" ]] && echo -e "     ${BLUE}💭 Why:${RESET} ${WHY}"
+      echo
+    fi
+  done
+fi
+
+# Approval status
+if [[ "$REQ_APPROVAL" == "true" ]]; then
+  echo -e "${BOLD}${YELLOW}⚠️  Manual approval required${RESET}"
+else
+  echo -e "${BOLD}${GREEN}✅ Auto-apply enabled${RESET}"
+fi
+
+# Apply prompt
+echo -e "\n${BOLD}${PURPLE}╔══════════════════════════════════════════════════════════════╗${RESET}"
+echo -e "${BOLD}${PURPLE}║                     🚀 Ready to Execute?                    ║${RESET}"
+echo -e "${BOLD}${PURPLE}╚══════════════════════════════════════════════════════════════╝${RESET}"
+read -p $'\n\033[1;33m🤔 Apply this plan now? (y/N): \033[0m' yn
+
+if [[ "$yn" =~ ^[Yy]$ ]]; then
+  echo -e "\n${CYAN}🚀 Executing plan...${RESET}"
+  
+  APPLY_PAYLOAD=$(jq -n --arg user "$USER_NAME" '{user:$user}')
+  APPLY_JSON=$(curl -s -X POST "$API/apply_pending" -H "Content-Type: application/json" -d "$APPLY_PAYLOAD")
+  
+  # Results Header
+  echo -e "\n${BOLD}${GREEN}╔══════════════════════════════════════════════════════════════╗${RESET}"
+  echo -e "${BOLD}${GREEN}║                    🎯 Execution Results                    ║${RESET}"
+  echo -e "${BOLD}${GREEN}╚══════════════════════════════════════════════════════════════╝${RESET}\n"
+  
+  LEN=$(jq '.applied | length' <<<"$APPLY_JSON" 2>/dev/null || echo 0)
+  for i in $(seq 0 $((LEN-1))); do
+    STEP_CMD=$(jq -r ".applied[$i].step.args.cmd // \"\"" <<<"$APPLY_JSON")
+    RC=$(jq -r ".applied[$i].result.returncode // -1" <<<"$APPLY_JSON")
+    STDOUT=$(jq -r ".applied[$i].result.stdout // \"\"" <<<"$APPLY_JSON")
+    STDERR=$(jq -r ".applied[$i].result.stderr // \"\"" <<<"$APPLY_JSON")
+    
+    # Status indicator
+    if [[ "$RC" -eq 0 ]]; then
+      STATUS_ICON="✅"
+      STATUS_COLOR="$GREEN"
+    else
+      STATUS_ICON="❌"
+      STATUS_COLOR="$RED"
+    fi
+    
+    echo -e "  ${BOLD}${PURPLE}[$((i+1))]${RESET} ${STATUS_ICON} ${BOLD}${STATUS_COLOR}Command:${RESET} ${CYAN}${STEP_CMD}${RESET}"
+    echo -e "     ${BLUE}📊 Exit Code:${RESET} ${STATUS_COLOR}${RC}${RESET}"
+    
+    if [[ -n "$STDOUT" ]]; then
+      echo -e "     ${GREEN}📤 Output:${RESET}"
+      echo "$STDOUT" | sed 's/^/       /'
+    fi
+    
+    if [[ -n "$STDERR" ]]; then
+      echo -e "     ${RED}⚠️  Errors:${RESET}"
+      echo "$STDERR" | sed 's/^/       /'
+    fi
+    echo
+  done
+  
+  echo -e "${BOLD}${GREEN}🎉 Execution complete!${RESET}\n"
+else
+  echo -e "\n${YELLOW}⏸️  Plan saved for later execution${RESET}\n"
+fi

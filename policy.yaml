@@ -1,0 +1,43 @@
+safety:
+  blocked_patterns:
+    - "rm -rf /"
+    - "mkfs"
+    - ":(){ :|:& };:"  # fork bomb
+    - "dd if=/dev/zero"
+    - "> /dev/sda"
+  max_cmd_length: 1000
+
+roles:
+  viewer:
+    require_approval: true
+  operator:
+    require_approval: true
+  admin:
+    require_approval: false
+
+tools:
+  RunCommand:
+    allowlist_read:
+      - "uname -a"
+      - "cat /etc/os-release"
+      - "df -h"
+      - "free -m"
+      - "ss -tulpn"
+      - "ls -la *"
+      - "cat /etc/hosts"
+      - "grep *"
+      - "journalctl *"
+      - "systemctl status *"
+      - "podman ps"
+      - "docker ps"
+    allowlist_write:
+      - "dnf -y *"
+      - "yum -y *"
+      - "apt-get *"
+      - "zypper *"
+      - "systemctl *"
+      - "firewall-cmd *"
+      - "podman *"
+      - "docker *"
+      - "echo * | tee *"
+      - "mkdir -p *"

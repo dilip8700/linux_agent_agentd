@@ -1,0 +1,11 @@
+llm:
+  provider: gemini
+  model: "gemini-2.5-flash"
+  temperature: 0.1
+
+agent:
+  host: "127.0.0.1"
+  port: 8001
+  auto_apply: false
+
+audit_log: "/opt/genai-agent/logs/audit.jsonl"

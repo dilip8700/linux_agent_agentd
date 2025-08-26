@@ -129,8 +129,9 @@ temp/
 *.bak
 *.backup
 
-# Application specific
-config.yaml
-policy.yaml
-install.sh
-agentctl
+# Application specific (keep these tracked)
+# DO NOT ignore installer or CLI or configs
+# install.sh
+# agentctl
+# config.yaml
+# policy.yaml
